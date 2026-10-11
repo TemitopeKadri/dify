@@ -14,6 +14,7 @@ from core.mcp.types import (
     CallToolResult,
     EmbeddedResource,
     ImageContent,
+    ResourceLink,
     TextContent,
     TextResourceContents,
 )
@@ -148,6 +149,69 @@ def test_mcp_tool_invoke_raises_for_unsupported_embedded_resource(sqlite_session
     with patch.object(MCPTool, "invoke_remote_mcp_tool", return_value=result):
         with pytest.raises(ToolInvokeError, match="Unsupported embedded resource type"):
             list(tool.invoke(session=sqlite_session, user_id="user-1", tool_parameters={}))
+
+
+@pytest.mark.parametrize("sqlite_session", [()], indirect=True)
+def test_mcp_tool_invoke_preserves_resource_link_uri(sqlite_session: Session):
+    tool = _build_mcp_tool()
+    result = CallToolResult(
+        content=[ResourceLink(type="resource_link", uri="file:///tmp/report.pdf", name="report.pdf")],
+        _meta=None,
+    )
+
+    with patch.object(MCPTool, "invoke_remote_mcp_tool", return_value=result):
+        messages = list(tool.invoke(session=sqlite_session, user_id="user-1", tool_parameters={}))
+
+    assert len(messages) == 1
+    assert messages[0].type == ToolInvokeMessage.MessageType.TEXT
+    assert "file:///tmp/report.pdf" in messages[0].message.text
+
+
+@pytest.mark.parametrize("sqlite_session", [()], indirect=True)
+def test_mcp_tool_invoke_resource_link_includes_description_and_mime_type(sqlite_session: Session):
+    tool = _build_mcp_tool()
+    result = CallToolResult(
+        content=[
+            ResourceLink(
+                type="resource_link",
+                uri="https://mcp.example.com/exports/report.csv",
+                name="report.csv",
+                description="Exported report",
+                mimeType="text/csv",
+            )
+        ],
+        _meta=None,
+    )
+
+    with patch.object(MCPTool, "invoke_remote_mcp_tool", return_value=result):
+        messages = list(tool.invoke(session=sqlite_session, user_id="user-1", tool_parameters={}))
+
+    assert len(messages) == 1
+    assert messages[0].type == ToolInvokeMessage.MessageType.TEXT
+    text = messages[0].message.text
+    assert "https://mcp.example.com/exports/report.csv" in text
+    assert "Exported report" in text
+    assert "text/csv" in text
+
+
+@pytest.mark.parametrize("sqlite_session", [()], indirect=True)
+def test_mcp_tool_invoke_preserves_mixed_text_and_resource_link_in_order(sqlite_session: Session):
+    tool = _build_mcp_tool()
+    result = CallToolResult(
+        content=[
+            TextContent(type="text", text="plain-result"),
+            ResourceLink(type="resource_link", uri="file:///tmp/a.txt", name="a.txt", description="doc"),
+        ],
+        _meta=None,
+    )
+
+    with patch.object(MCPTool, "invoke_remote_mcp_tool", return_value=result):
+        messages = list(tool.invoke(session=sqlite_session, user_id="user-1", tool_parameters={}))
+
+    assert [m.type for m in messages] == [ToolInvokeMessage.MessageType.TEXT, ToolInvokeMessage.MessageType.TEXT]
+    assert messages[0].message.text == "plain-result"
+    assert "file:///tmp/a.txt" in messages[1].message.text
+    assert "doc" in messages[1].message.text
 
 
 def test_mcp_tool_handle_none_parameter_filters_empty_values():

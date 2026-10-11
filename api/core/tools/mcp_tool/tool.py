@@ -18,6 +18,7 @@ from core.mcp.types import (
     CallToolResult,
     EmbeddedResource,
     ImageContent,
+    ResourceLink,
     TextContent,
     TextResourceContents,
 )
@@ -101,6 +102,13 @@ class MCPTool(Tool):
                             )
                         case _:
                             raise ToolInvokeError(f"Unsupported embedded resource type: {type(resource)}")
+                case ResourceLink():
+                    link_lines = [f"Resource link: {content.uri}"]
+                    if content.description:
+                        link_lines.append(f"Description: {content.description}")
+                    if content.mimeType:
+                        link_lines.append(f"MIME type: {content.mimeType}")
+                    yield self.create_text_message("\n".join(link_lines))
                 case _:
                     logger.warning("Unsupported content type=%s", type(content))
 
